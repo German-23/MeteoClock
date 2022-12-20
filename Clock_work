@@ -1,0 +1,2349 @@
+/* ПРОГРАММА ДЛЯ РАБОТЫ ЧАСОВ-МЕТЕОТАБЛО
+   ОБЪЕМ ЗАНИМАЕМОЙ ПАМЯТИ В МК - 19190 БАЙТА(62% памяти)
+*/
+#define DATA_PIN    3 // пин данных ds
+#define CLOCK_PIN   2 // пин тактов синхронизации sh cp
+#define LATCH_PIN1  4  //}
+#define LATCH_PIN2  7  //}
+#define LATCH_PIN3  8  //}   сигнал
+#define LATCH_PIN4  9  //}
+#define LATCH_PIN5  10 //}
+
+//##########БИБЛИОТЕКИ###############
+#include <microDS3231.h>
+MicroDS3231 rtc;
+#include "GyverTimer.h"
+GTimer myTimer(MS);
+#include <microDS18B20.h>
+MicroDS18B20<12> sensor;
+#include <EEPROM.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP085_U.h>
+Adafruit_BMP085_Unified bmp = Adafruit_BMP085_Unified(10085);
+//###################################
+/////////////ПЕРЕМЕННЫЕ//////////////
+int minutes1;   int hours1;   int day1;   int month1;   int year1;    int temp1;     int press1;
+int minutes2;   int hours2;   int day2;   int month2;   int year2;    int temp2;     int press2;
+int minutes3;   int hours3;   int day3;   int month3;   int year3;    int temp3;     int press3;
+int minutes4;   int hours4;   int day4;   int month4;   int year4;    int temp4;     int press4;
+
+int time_n_min3;      int time_n_day3;        int time_n_year0;    int n_press0;    int otobr1;     int otobr5;
+int time_n_min2;      int time_n_day2;        int time_n_year1;    int n_press1;    int otobr2;
+int time_n_hour3;     int time_n_month3;      int time_n_year2;    int n_press2;    int otobr3;
+int time_n_hour2;     int time_n_month2;      int time_n_year3;    int n_press3;    int otobr4;
+
+byte Array[] = {0b11011110, 0b01000100, 0b11101010, 0b11100110, 0b01110100, 0b10110110, 0b10111110, 0b11000100, 0b11111110, 0b11110110, 0b00100000};
+
+// 0           1            2          3            4           5            6          7           8           9           -
+int cifra;
+int time1;  int time3;    int time5;    int press7;
+int time2;  int time4;    int temp6;    int press_n;
+int flag;
+int flag2;
+void displaySensorDetails(void)
+{
+  sensor_t sensor;
+  bmp.getSensor(&sensor);
+  delay(500);
+}
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+void setup(void) {
+  ////////НАСТРОЙКА/////////
+  Serial.begin(9600);
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLOCK_PIN, OUTPUT);
+  pinMode(LATCH_PIN1, OUTPUT);
+  pinMode(LATCH_PIN2, OUTPUT);
+  pinMode(LATCH_PIN3, OUTPUT);
+  pinMode(LATCH_PIN4, OUTPUT);
+  pinMode(LATCH_PIN5, OUTPUT);
+
+  out_595_shift1(0b00000000);
+  out_595_shift2(0b00000000);
+  out_595_shift3(0b00000000);
+  out_595_shift4(0b00000000);
+  out_595_shift5(0b00000000);
+
+
+  myTimer.setInterval(5000);
+  bmp.begin();
+ //rtc.setTime(COMPILE_TIME); 
+}
+void loop(void) {
+  ///////////ОСНОВНОЙ КОД////////////
+  ///////////МИНУТЫ И ЧАСЫ///////////
+  myTimer.setInterval(EEPROM.get(2, otobr1) * 1000);
+  while (not(myTimer.isReady())) {
+    time1 = rtc.getMinutes();
+    time_minutes();
+
+    time2 = rtc.getHours();
+    time_hours();
+
+    vivod_minutes();
+    vivod_hours();
+
+    if (time1 >= 0) {
+      out_595_shift3(0b00100000);
+      delay(500);
+      out_595_shift3(0b00000000);
+      delay(500);
+    }
+    if (Serial.available()) {
+      break;
+    }
+  }
+
+  out_595_shift1(0b00000000);
+  out_595_shift2(0b00000000);
+  out_595_shift3(0b00000000);
+  out_595_shift4(0b00000000);
+  out_595_shift5(0b00000000);
+
+  /////////ДНИ И МЕСЯЦЫ/////////////
+  myTimer.setInterval(EEPROM.get(4, otobr2) * 1000);
+  while (not(myTimer.isReady())) {
+    time3 = rtc.getDate();
+    time_day();
+
+    time4 = rtc.getMonth();
+    time_month();
+
+    vivod_day();
+    vivod_month();
+    if (Serial.available()) {
+      break;
+    }
+  }
+
+  out_595_shift1(0b00000000);
+  out_595_shift2(0b00000000);
+  out_595_shift3(0b00000000);
+  out_595_shift4(0b00000000);
+  out_595_shift5(0b00000000);
+
+  ////////////ГОД////////////
+  myTimer.setInterval(EEPROM.get(6, otobr3) * 1000);
+  while (not(myTimer.isReady())) {
+    time5 = rtc.getYear();
+    time_year();
+
+    vivod_year();
+    if (Serial.available()) {
+      break;
+    }
+  }
+
+  out_595_shift1(0b00000000);
+  out_595_shift2(0b00000000);
+  out_595_shift3(0b00000000);
+  out_595_shift4(0b00000000);
+  out_595_shift5(0b00000000);
+
+  /////////////ТЕМПЕРАТУРА////////////////
+  myTimer.setInterval(EEPROM.get(8, otobr4) * 1000);
+  while (not(myTimer.isReady())) {
+    sensor.requestTemp();
+    temp6 = sensor.getTemp();
+    temp();
+    if (temp6 < 0) {
+      out_595_shift1(0b00100000);
+    }
+    else {
+      out_595_shift1(0b00000000);
+    }
+    vivod_temp();
+    out_595_shift4(0b11110000);
+    out_595_shift5(0b10011010);
+    if (Serial.available()) {
+      break;
+    }
+  }
+
+  out_595_shift1(0b00000000);
+  out_595_shift2(0b00000000);
+  out_595_shift3(0b00000000);
+  out_595_shift4(0b00000000);
+  out_595_shift5(0b00000000);
+
+  ////////////ДАВЛЕНИЕ//////////////
+  sensors_event_t event;
+  bmp.getEvent(&event);
+  press_n = (EEPROM.get(13, n_press3) * 10) + EEPROM.get(11, n_press2);
+  press7 = (event.pressure * 0.0075 * 100) + press_n;
+  myTimer.setInterval(EEPROM.get(16, otobr5) * 1000);
+  while (not(myTimer.isReady())) {
+    pressure();
+    vivod_press();
+    out_595_shift2(0b11111000);
+
+    if (Serial.available()) {
+      break;
+    }
+  }
+
+  /////////ПЕРЕМЕННЫЕ ДЛЯ НАСТРОЙКИ/////////////////
+  time_n_min3 = minutes4;        time_n_day3 = day4;         time_n_year0 = year4;
+  time_n_min2 = minutes3;        time_n_day2 = day3;         time_n_year1 = year3;
+  time_n_hour3 = hours4;         time_n_month3 = month4;     time_n_year2 = year2;
+  time_n_hour2 = hours3;         time_n_month2 = month3;     time_n_year3 = year1;
+
+  //////////НАСТРОЙКА С ТЕЛЕФОНА///////////////////
+  if (Serial.available()) {
+    int val = Serial.read();
+    if (val == 'a') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      vivod_minutes_n2();
+      vivod_minutes_n1();
+      vivod_hours_n2();
+      vivod_hours_n1();
+      flag = 1;
+      while (flag == 1) {
+        while (flag2 == 0) {
+          int val2 = Serial.read();
+          if (val2 == '0') { //0
+            time_n_min3 = time_n_min3 + 1;
+          }
+          if (val2 == '1') { //1
+            time_n_min3 = time_n_min3 - 1;
+          }
+          if (time_n_min3 > 9) {
+            time_n_min3 = time_n_min3 - 1;
+          }
+          if (time_n_min3 < 0) {
+            time_n_min3 = time_n_min3 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_minutes_n2();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val2 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val2 == '2') { //-->
+            flag2 = flag2;
+          }
+          if (flag2 == 1) {
+            break;
+          }
+          if (val2 == 'b' or val2 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_minutes_n2();
+
+
+
+        while (flag2 == 1) {
+          int val3 = Serial.read();
+          if (val3 == '0') { //0
+            time_n_min2 = time_n_min2 + 1;
+          }
+          if (val3 == '1') { //1
+            time_n_min2 = time_n_min2 - 1;
+          }
+          if (time_n_min2 > 5) {
+            time_n_min2 = time_n_min2 - 1;
+          }
+          if (time_n_min2 < 0) {
+            time_n_min2 = time_n_min2 + 1;
+          }
+          if (flag2 == 1) {
+            vivod_minutes_n1();
+            delay(500);
+            out_595_shift4(0b00000000);
+            delay(500);
+          }
+          if (val3 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val3 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 2) {
+            break;
+          }
+          if (val3 == 'b' or val3 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_minutes_n1();
+        while (flag2 == 2) {
+          int val4 = Serial.read();
+          if (val4 == '0') { //0
+            time_n_hour3 = time_n_hour3 + 1;
+          }
+          if (val4 == '1') { //1
+            time_n_hour3 = time_n_hour3 - 1;
+          }
+          if (time_n_hour2 < 2) {
+            if (time_n_hour3 > 9) {
+              time_n_hour3 = time_n_hour3 - 1;
+            }
+            if (time_n_hour3 < 0) {
+              time_n_hour3 = time_n_hour3 + 1;
+            }
+          }
+          else {
+            if (time_n_hour3 > 3) {
+              time_n_hour3 = time_n_hour3 - 1;
+            }
+            if (time_n_hour3 < 0) {
+              time_n_hour3 = time_n_hour3 + 1;
+            }
+          }
+          if (flag2 == 2) {
+            vivod_hours_n2();
+            delay(500);
+            out_595_shift2(0b00000000);
+            delay(500);
+          }
+          if (val4 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val4 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 3) {
+            break;
+          }
+          if (val4 == 'b' or val4 == '4') {
+            flag2 = 0;
+            flag == 0;
+            break;
+          }
+        }
+        vivod_hours_n2();
+        while (flag2 == 3) {
+          int val5 = Serial.read();
+          if (val5 == '0') { //0
+            time_n_hour2 = time_n_hour2 + 1;
+          }
+          if (val5 == '1') { //1
+            time_n_hour2 = time_n_hour2 - 1;
+          }
+          if (time_n_hour2 > 2) {
+            time_n_hour2 = time_n_hour2 - 1;
+          }
+          if (time_n_hour2 < 0) {
+            time_n_hour2 = time_n_hour2 + 1;
+          }
+          if (time_n_hour3 > 3 and time_n_hour2 > 2) {
+            time_n_hour3 = 3;
+          }
+          if (flag2 == 3) {
+            vivod_hours_n1();
+            delay(500);
+            out_595_shift1(0b00000000);
+            delay(500);
+          }
+          if (val5 == '3') { //<--
+            flag2 = flag2;
+          }
+          if (val5 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          //  if (flag2 == 4) {
+          //    flag2 = flag2;
+          //  }
+          if (val5 == 'b' or val5 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_hours_n1();
+      }
+      time1 = (time_n_min2 * 10) + time_n_min3;
+      time2 = (time_n_hour2 * 10) + time_n_hour3;
+      vvod_time();
+    }
+
+
+    if (val == 'c') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      vivod_month_n2();
+      vivod_month_n1();
+      vivod_day_n2();
+      vivod_day_n1();
+      flag = 2;
+      while (flag == 2) {
+        while (flag2 == 0) {
+          int val6 = Serial.read();
+          if (val6 == '0') { //0
+            time_n_month3 = time_n_month3 + 1;
+          }
+          if (val6 == '1') { //1
+            time_n_month3 = time_n_month3 - 1;
+          }
+          if (time_n_month2 < 1) {
+            if (time_n_month3 > 9) {
+              time_n_month3 = time_n_month3 - 1;
+            }
+            if (time_n_month3 < 0) {
+              time_n_month3 = time_n_month3 + 1;
+            }
+          }
+          else {
+            if (time_n_month3 > 2) {
+              time_n_month3 = time_n_month3 - 1;
+            }
+            if (time_n_month3 < 0) {
+              time_n_month3 = time_n_month3 + 1;
+            }
+          }
+          if (flag2 == 0) {
+            vivod_month_n2();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val6 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val6 == '2') { //-->
+            flag2 = flag2;
+          }
+          if (flag2 == 1) {
+            break;
+          }
+          if (val6 == 'd' or val6 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_month_n2();
+
+        while (flag2 == 1) {
+          int val7 = Serial.read();
+          if (val7 == '0') { //0
+            time_n_month2 = time_n_month2 + 1;
+          }
+          if (val7 == '1') { //1
+            time_n_month2 = time_n_month2 - 1;
+          }
+          if (time_n_month2 > 1) {
+            time_n_month2 = time_n_month2 - 1;
+          }
+          if (time_n_month2 < 0) {
+            time_n_month2 = time_n_month2 + 1;
+          }
+          if (flag2 == 1) {
+            vivod_month_n1();
+            delay(500);
+            out_595_shift4(0b00000000);
+            delay(500);
+          }
+          if (val7 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val7 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 2) {
+            break;
+          }
+          if (val7 == 'd' or val7 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        if (time_n_month2 > 0 and time_n_month3 > 2) {
+          time_n_month3 = 2;
+        }
+        vivod_month_n2();
+        vivod_month_n1();
+
+        while (flag2 == 2) {
+          int val8 = Serial.read();
+          if (val8 == '0') { //0
+            time_n_day3 = time_n_day3 + 1;
+          }
+          if (val8 == '1') { //1
+            time_n_day3 = time_n_day3 - 1;
+          }
+          if (time_n_day2 < 3) {
+            if (time_n_day3 > 9) {
+              time_n_day3 = time_n_day3 - 1;
+            }
+            if (time_n_day3 < 0) {
+              time_n_day3 = time_n_day3 + 1;
+            }
+          }
+          else {
+            if (time_n_day3 > 1) {
+              time_n_day3 = time_n_day3 - 1;
+            }
+            if (time_n_day3 < 0) {
+              time_n_day3 = time_n_day3 + 1;
+            }
+          }
+          if (flag2 == 2) {
+            vivod_day_n2();
+            delay(500);
+            out_595_shift2(0b00000000);
+            delay(500);
+          }
+          if (val8 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val8 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 3) {
+            break;
+          }
+          if (val8 == 'd' or val8 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_day_n2();
+        while (flag2 == 3) {
+          int val9 = Serial.read();
+          if (val9 == '0') { //0
+            time_n_day2 = time_n_day2 + 1;
+          }
+          if (val9 == '1') { //1
+            time_n_day2 = time_n_day2 - 1;
+          }
+          if (time_n_day2 > 3) {
+            time_n_day2 = time_n_day2 - 1;
+          }
+          if (time_n_day2 < 0) {
+            time_n_day2 = time_n_day2 + 1;
+          }
+          if (time_n_day2 > 2 and time_n_day3 > 1) {
+            time_n_month3 = 1;
+          }
+          if (flag2 == 3) {
+            vivod_day_n1();
+            delay(500);
+            out_595_shift1(0b00000000);
+            delay(500);
+          }
+          if (val9 == '3') { //<--
+            flag2 = flag2;
+          }
+          if (val9 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          //    if (flag2 == 4) {
+          //       flag2 = flag2;
+          //     }
+          if (val9 == 'd' or val9 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_day_n1();
+      }
+      time4 = (time_n_month2 * 10) + time_n_month3;
+      time3 = (time_n_day2 * 10) + time_n_day3;
+      vvod_time();
+    }
+
+
+    if (val == 'f') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      vivod_year_n0();
+      vivod_year_n1();
+      vivod_year_n2();
+      vivod_year_n3();
+      flag = 3;
+      while (flag == 3) {
+        while (flag2 == 0) {
+          int val10 = Serial.read();
+          if (val10 == '0') { //0
+            time_n_year0 = time_n_year0 + 1;
+          }
+          if (val10 == '1') { //1
+            time_n_year0 = time_n_year0 - 1;
+          }
+          if (time_n_year0 > 9) {
+            time_n_year0 = time_n_year0 - 1;
+          }
+          if (time_n_year0 < 0) {
+            time_n_year0 = time_n_year0 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_year_n0();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val10 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val10 == '2') { //-->
+            flag2 = flag2;
+          }
+          if (flag == 1) {
+            break;
+          }
+          if (val10 == 'e' or val10 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_year_n0();
+
+        while (flag2 == 1) {
+          int val11 = Serial.read();
+          if (val11 == '0') { //0
+            time_n_year1 = time_n_year1 + 1;
+          }
+          if (val11 == '1') { //1
+            time_n_year1 = time_n_year1 - 1;
+          }
+          if (time_n_year1 > 9) {
+            time_n_year1 = time_n_year1 - 1;
+          }
+          if (time_n_year1 < 0) {
+            time_n_year1 = time_n_year1 + 1;
+          }
+          if (flag2 == 1) {
+            vivod_year_n1();
+            delay(500);
+            out_595_shift4(0b00000000);
+            delay(500);
+          }
+          if (val11 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val11 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 2) {
+            break;
+          }
+          if (val11 == 'e' or val11 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_year_n1();
+
+        while (flag2 == 2) {
+          int val12 = Serial.read();
+          if (val12 == '0') { //0
+            time_n_year2 = time_n_year2 + 1;
+          }
+          if (val12 == '1') { //1
+            time_n_year2 = time_n_year2 - 1;
+          }
+          if (time_n_year2 > 9) {
+            time_n_year2 = time_n_year2 - 1;
+          }
+          if (time_n_year2 < 0) {
+            time_n_year2 = time_n_year2 + 1;
+          }
+          if (flag2 == 2) {
+            vivod_year_n2();
+            delay(500);
+            out_595_shift3(0b00000000);
+            delay(500);
+          }
+          if (val12 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val12 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 3) {
+            break;
+          }
+          if (val12 == 'e' or val12 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_year_n2();
+        while (flag2 == 3) {
+          int val13 = Serial.read();
+          if (val13 == '0') { //0
+            time_n_year3 = time_n_year3 + 1;
+          }
+          if (val13 == '1') { //1
+            time_n_year3 = time_n_year3 - 1;
+          }
+          if (time_n_year3 > 9) {
+            time_n_year3 = time_n_year3 - 1;
+          }
+          if (time_n_year3 < 0) {
+            time_n_year3 = time_n_year3 + 1;
+          }
+          if (flag2 == 3) {
+            vivod_year_n3();
+            delay(500);
+            out_595_shift2(0b00000000);
+            delay(500);
+          }
+          if (val13 == '3') { //<--
+            flag2 = flag2;
+          }
+          if (val13 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (flag2 == 4) {
+            flag2 = flag2;
+          }
+          if (val13 == 'e' or val13 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_year_n3();
+      }
+      time5 = (time_n_year3 * 1000) + (time_n_year2 * 100) + (time_n_year1 * 10) + time_n_year0;
+      vvod_time();
+    }
+
+
+    if (val == 'g') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(11, n_press2);
+      EEPROM.get(13, n_press3);
+      vivod_press_n3();
+      vivod_press_n2();
+      flag = 4;
+      while (flag == 4) {
+        while (flag2 == 0) {
+          int val14 = Serial.read();
+          if (val14 == '0') { //0
+            n_press2 = n_press2 + 1;
+          }
+          if (val14 == '1') { //1
+            n_press2 = n_press2 - 1;
+          }
+          if (n_press2 > 9) {
+            n_press2 = n_press2 - 1;
+          }
+          if (n_press2 < 0) {
+            n_press2 = n_press2 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_press_n2();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val14 == '3') { //<--
+            flag2 = flag2 + 1;
+          }
+          if (val14 == '2') { //-->
+            flag2 = flag2;
+          }
+          if (flag2 == 1) {
+            break;
+          }
+          if (val14 == 'h' or val14 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_press_n2();
+        while (flag2 == 1) {
+          int val15 = Serial.read();
+          if (val15 == '0') { //0
+            n_press3 = n_press3 + 1;
+          }
+          if (val15 == '1') { //1
+            n_press3 = n_press3 - 1;
+          }
+          if (n_press3 > 9) {
+            n_press3 = n_press3 - 1;
+          }
+          if (n_press3 < 0) {
+            n_press3 = n_press3 + 1;
+          }
+          if (flag2 == 1) {
+            vivod_press_n3();
+            delay(500);
+            out_595_shift4(0b00000000);
+            delay(500);
+          }
+          if (val15 == '3') { //<--
+            flag2 = flag2;
+          }
+          if (val15 == '2') { //-->
+            flag2 = flag2 - 1;
+          }
+          if (val15 == 'h' or val15 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+        vivod_press_n3();
+
+      }
+      // press_n = (n_press3 * 10) + n_press2;
+      otobr1 = otobr1;
+      EEPROM.put(11, n_press2);
+      EEPROM.put(13, n_press3);
+
+    }
+
+    if (val == 'i') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(2, otobr1);
+      vivod_otobr1();
+      flag = 5;
+      while (flag == 5) {
+        while (flag2 == 0) {
+          int val16 = Serial.read();
+          if (val16 == '0') { //0
+            otobr1 = otobr1 + 1;
+          }
+          if (val16 == '1') { //1
+            otobr1 = otobr1 - 1;
+          }
+          if (otobr1 > 9) {
+            otobr1 = otobr1 - 1;
+          }
+          if (otobr1 < 0) {
+            otobr1 = otobr1 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_otobr1();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val16 == 'j' or val16 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+      }
+      EEPROM.put(2, otobr1);
+
+    }
+    if (val == 'k') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(4, otobr2);
+      vivod_otobr2();
+      flag = 6;
+      while (flag == 6) {
+        while (flag2 == 0) {
+          int val17 = Serial.read();
+          if (val17 == '0') { //0
+            otobr2 = otobr2 + 1;
+          }
+          if (val17 == '1') { //1
+            otobr2 = otobr2 - 1;
+          }
+          if (otobr2 > 9) {
+            otobr2 = otobr2 - 1;
+          }
+          if (otobr2 < 0) {
+            otobr2 = otobr2 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_otobr2();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val17 == 'l' or val17 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+      }
+      EEPROM.put(4, otobr2);
+    }
+    if (val == 'm') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(6, otobr3);
+      vivod_otobr3();
+      flag = 7;
+      while (flag == 7) {
+        while (flag2 == 0) {
+          int val18 = Serial.read();
+          if (val18 == '0') { //0
+            otobr3 = otobr3 + 1;
+          }
+          if (val18 == '1') { //1
+            otobr3 = otobr3 - 1;
+          }
+          if (otobr3 > 9) {
+            otobr3 = otobr3 - 1;
+          }
+          if (otobr3 < 0) {
+            otobr3 = otobr3 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_otobr3();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val18 == 'n' or val18 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+      }
+      EEPROM.put(6, otobr3);
+
+    }
+    if (val == 'o') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(8, otobr4);
+      vivod_otobr4();
+      flag = 8;
+      while (flag == 8) {
+        while (flag2 == 0) {
+          int val19 = Serial.read();
+          if (val19 == '0') { //0
+            otobr4 = otobr4 + 1;
+          }
+          if (val19 == '1') { //1
+            otobr4 = otobr4 - 1;
+          }
+          if (otobr4 > 9) {
+            otobr4 = otobr4 - 1;
+          }
+          if (otobr4 < 0) {
+            otobr4 = otobr4 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_otobr4();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val19 == 'p' or val19 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+      }
+      EEPROM.put(8, otobr4);
+
+    }
+    if (val == 'q') {
+      out_595_shift1(0b00000000);
+      out_595_shift2(0b00000000);
+      out_595_shift3(0b00000000);
+      out_595_shift4(0b00000000);
+      out_595_shift5(0b00000000);
+      EEPROM.get(16, otobr5);
+      vivod_otobr5();
+      flag = 9;
+      while (flag == 9) {
+        while (flag2 == 0) {
+          int val20 = Serial.read();
+          if (val20 == '0') { //0
+            otobr5 = otobr5 + 1;
+          }
+          if (val20 == '1') { //1
+            otobr5 = otobr5 - 1;
+          }
+          if (otobr5 > 9) {
+            otobr5 = otobr5 - 1;
+          }
+          if (otobr5 < 0) {
+            otobr5 = otobr5 + 1;
+          }
+          if (flag2 == 0) {
+            vivod_otobr5();
+            delay(500);
+            out_595_shift5(0b00000000);
+            delay(500);
+          }
+          if (val20 == 'r' or val20 == '4') {
+            flag2 = 0;
+            flag = 0;
+            break;
+          }
+        }
+      }
+      EEPROM.put(16, otobr5);
+
+    }
+    /////СБРОС////////
+    if (val == '4') {
+      EEPROM.put(11, 0);
+      EEPROM.put(13, 0);
+      EEPROM.put(2, 3);
+      EEPROM.put(4, 3);
+      EEPROM.put(6, 3);
+      EEPROM.put(8, 3);
+      EEPROM.put(16, 3);
+    }
+    if (val == '5') {
+      DateTime now;
+      now.second = 0;
+      now.minute = 0;
+      now.hour = 0;
+      now.date = 1;
+      now.month = 1;
+      now.year = 2000;
+      rtc.setTime(now);
+    }
+  }
+}
+////////////ФУНКЦИИ ВЫВОДА//////////////
+void out_595_shift1(byte x) {
+  shiftOut(DATA_PIN, CLOCK_PIN, LSBFIRST, x);
+  digitalWrite(LATCH_PIN1, HIGH);
+  delay(1);
+  digitalWrite(LATCH_PIN1, LOW);
+}
+void out_595_shift2(byte x) {
+  shiftOut(DATA_PIN, CLOCK_PIN, LSBFIRST, x);
+  digitalWrite(LATCH_PIN2, HIGH);
+  delay(1);
+  digitalWrite(LATCH_PIN2, LOW);
+}
+void out_595_shift3(byte x) {
+  shiftOut(DATA_PIN, CLOCK_PIN, LSBFIRST, x);
+  digitalWrite(LATCH_PIN3, HIGH);
+  delay(1);
+  digitalWrite(LATCH_PIN3, LOW);
+}
+void out_595_shift4(byte x) {
+  shiftOut(DATA_PIN, CLOCK_PIN, LSBFIRST, x);
+  digitalWrite(LATCH_PIN4, HIGH);
+  delay(1);
+  digitalWrite(LATCH_PIN4, LOW);
+}
+void out_595_shift5(byte x) {
+  shiftOut(DATA_PIN, CLOCK_PIN, LSBFIRST, x);
+  digitalWrite(LATCH_PIN5, HIGH);
+  delay(1);
+  digitalWrite(LATCH_PIN5, LOW);
+}
+void time_minutes() {
+  minutes1 = time1 / 1000;
+  cifra = minutes1 * 1000;
+  minutes2 = (time1 - cifra) / 100;
+  cifra += minutes2 * 100;
+  minutes3 = (time1 - cifra) / 10;
+  cifra += minutes3 * 10;
+  minutes4 = time1 - cifra;
+  cifra = 0;
+}
+void time_hours() {
+  hours1 = time2 / 1000;
+  cifra = hours1 * 1000;
+  hours2 = (time2 - cifra) / 100;
+  cifra += hours2 * 100;
+  hours3 = (time2 - cifra) / 10;
+  cifra += hours3 * 10;
+  hours4 = time2 - cifra;
+  cifra = 0;
+}
+void time_day() {
+  day1 = time3 / 1000;
+  cifra = day1 * 1000;
+  day2 = (time3 - cifra) / 100;
+  cifra += day2 * 100;
+  day3 = (time3 - cifra) / 10;
+  cifra += day3 * 10;
+  day4 = time3 - cifra;
+  cifra = 0;
+}
+void time_month() {
+  month1 = time4 / 1000;
+  cifra = month1 * 1000;
+  month2 = (time4 - cifra) / 100;
+  cifra += month2 * 100;
+  month3 = (time4 - cifra) / 10;
+  cifra += month3 * 10;
+  month4 = time4 - cifra;
+  cifra = 0;
+}
+void time_year() {
+  year1 = time5 / 1000;
+  cifra = year1 * 1000;
+  year2 = (time5 - cifra) / 100;
+  cifra += year2 * 100;
+  year3 = (time5 - cifra) / 10;
+  cifra += year3 * 10;
+  year4 = time5 - cifra;
+  cifra = 0;
+}
+void temp() {
+  temp1 = temp6 / 1000;
+  cifra = temp1 * 1000;
+  temp2 = (temp6 - cifra) / 100;
+  cifra += temp2 * 100;
+  temp3 = (temp6 - cifra) / 10;
+  cifra += temp3 * 10;
+  temp4 = temp6 - cifra;
+  cifra = 0;
+}
+void pressure() {
+  press1 = press7 / 1000;
+  cifra = press1 * 1000;
+  press2 = (press7 - cifra) / 100;
+  cifra += press2 * 100;
+  press3 = (press7 - cifra) / 10;
+  cifra += press3 * 10;
+  press4 = press7 - cifra;
+  cifra = 0;
+}
+void vvod_time() {
+  DateTime now;
+  now.second = 0;
+  now.minute = time1;
+  now.hour = time2;
+  now.date = time3;
+  now.month = time4;
+  now.year = time5;
+  rtc.setTime(now);
+}
+void vivod_minutes() {
+  switch (minutes3) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+  switch (minutes4) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_hours() {
+  switch (hours3) {
+    case 1:
+      out_595_shift1(Array[1]);
+      break;
+    case 2:
+      out_595_shift1(Array[2]);
+      break;
+    case 3:
+      out_595_shift1(Array[3]);
+      break;
+    case 4:
+      out_595_shift1(Array[4]);
+      break;
+    case 5:
+      out_595_shift1(Array[5]);
+      break;
+    case 6:
+      out_595_shift1(Array[6]);
+      break;
+    case 7:
+      out_595_shift1(Array[7]);
+      break;
+    case 8:
+      out_595_shift1(Array[8]);
+      break;
+    case 9:
+      out_595_shift1(Array[9]);
+      break;
+  }
+  switch (hours4) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+}
+void vivod_day() {
+  switch (day3) {
+    case 1:
+      out_595_shift1(Array[1]);
+      break;
+    case 2:
+      out_595_shift1(Array[2]);
+      break;
+    case 3:
+      out_595_shift1(Array[3]);
+      break;
+    case 4:
+      out_595_shift1(Array[4]);
+      break;
+    case 5:
+      out_595_shift1(Array[5]);
+      break;
+    case 6:
+      out_595_shift1(Array[6]);
+      break;
+    case 7:
+      out_595_shift1(Array[7]);
+      break;
+    case 8:
+      out_595_shift1(Array[8]);
+      break;
+    case 9:
+      out_595_shift1(Array[9]);
+      break;
+  }
+  switch (day4) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+}
+void vivod_month() {
+  switch (month3) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+  switch (month4) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_year() {
+  switch (year1) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+  switch (year2) {
+    case 0:
+      out_595_shift3(Array[0]);
+      break;
+    case 1:
+      out_595_shift3(Array[1]);
+      break;
+    case 2:
+      out_595_shift3(Array[2]);
+      break;
+    case 3:
+      out_595_shift3(Array[3]);
+      break;
+    case 4:
+      out_595_shift3(Array[4]);
+      break;
+    case 5:
+      out_595_shift3(Array[5]);
+      break;
+    case 6:
+      out_595_shift3(Array[6]);
+      break;
+    case 7:
+      out_595_shift3(Array[7]);
+      break;
+    case 8:
+      out_595_shift3(Array[8]);
+      break;
+    case 9:
+      out_595_shift3(Array[9]);
+      break;
+  }
+
+  switch (year3) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+  switch (year4) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_temp() {
+  switch (temp3) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+
+  switch (temp4) {
+    case 0:
+      out_595_shift3(Array[0]);
+      break;
+    case 1:
+      out_595_shift3(Array[1]);
+      break;
+    case 2:
+      out_595_shift3(Array[2]);
+      break;
+    case 3:
+      out_595_shift3(Array[3]);
+      break;
+    case 4:
+      out_595_shift3(Array[4]);
+      break;
+    case 5:
+      out_595_shift3(Array[5]);
+      break;
+    case 6:
+      out_595_shift3(Array[6]);
+      break;
+    case 7:
+      out_595_shift3(Array[7]);
+      break;
+    case 8:
+      out_595_shift3(Array[8]);
+      break;
+    case 9:
+      out_595_shift3(Array[9]);
+      break;
+  }
+}
+void vivod_press() {
+  switch (press2) {
+    case 0:
+      out_595_shift3(Array[0]);
+      break;
+    case 1:
+      out_595_shift3(Array[1]);
+      break;
+    case 2:
+      out_595_shift3(Array[2]);
+      break;
+    case 3:
+      out_595_shift3(Array[3]);
+      break;
+    case 4:
+      out_595_shift3(Array[4]);
+      break;
+    case 5:
+      out_595_shift3(Array[5]);
+      break;
+    case 6:
+      out_595_shift3(Array[6]);
+      break;
+    case 7:
+      out_595_shift3(Array[7]);
+      break;
+    case 8:
+      out_595_shift3(Array[8]);
+      break;
+    case 9:
+      out_595_shift3(Array[9]);
+      break;
+  }
+
+  switch (press3) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+  switch (press4) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_minutes_n1() {
+  switch (time_n_min2) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+}
+void vivod_minutes_n2() {
+  switch (time_n_min3) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_hours_n1() {
+  switch (time_n_hour2) {
+    case 1:
+      out_595_shift1(Array[1]);
+      break;
+    case 2:
+      out_595_shift1(Array[2]);
+      break;
+    case 3:
+      out_595_shift1(Array[3]);
+      break;
+    case 4:
+      out_595_shift1(Array[4]);
+      break;
+    case 5:
+      out_595_shift1(Array[5]);
+      break;
+    case 6:
+      out_595_shift1(Array[6]);
+      break;
+    case 7:
+      out_595_shift1(Array[7]);
+      break;
+    case 8:
+      out_595_shift1(Array[8]);
+      break;
+    case 9:
+      out_595_shift1(Array[9]);
+      break;
+  }
+}
+void vivod_hours_n2() {
+  switch (time_n_hour3) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+}
+void vivod_day_n1() {
+  switch (time_n_day2) {
+    case 1:
+      out_595_shift1(Array[1]);
+      break;
+    case 2:
+      out_595_shift1(Array[2]);
+      break;
+    case 3:
+      out_595_shift1(Array[3]);
+      break;
+    case 4:
+      out_595_shift1(Array[4]);
+      break;
+    case 5:
+      out_595_shift1(Array[5]);
+      break;
+    case 6:
+      out_595_shift1(Array[6]);
+      break;
+    case 7:
+      out_595_shift1(Array[7]);
+      break;
+    case 8:
+      out_595_shift1(Array[8]);
+      break;
+    case 9:
+      out_595_shift1(Array[9]);
+      break;
+  }
+}
+void vivod_day_n2() {
+  switch (time_n_day3) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+}
+void vivod_month_n1() {
+  switch (time_n_month2) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+}
+void vivod_month_n2() {
+  switch (time_n_month3) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_year_n3() {
+  switch (time_n_year3) {
+    case 0:
+      out_595_shift2(Array[0]);
+      break;
+    case 1:
+      out_595_shift2(Array[1]);
+      break;
+    case 2:
+      out_595_shift2(Array[2]);
+      break;
+    case 3:
+      out_595_shift2(Array[3]);
+      break;
+    case 4:
+      out_595_shift2(Array[4]);
+      break;
+    case 5:
+      out_595_shift2(Array[5]);
+      break;
+    case 6:
+      out_595_shift2(Array[6]);
+      break;
+    case 7:
+      out_595_shift2(Array[7]);
+      break;
+    case 8:
+      out_595_shift2(Array[8]);
+      break;
+    case 9:
+      out_595_shift2(Array[9]);
+      break;
+  }
+}
+void vivod_year_n2() {
+  switch (time_n_year2) {
+    case 0:
+      out_595_shift3(Array[0]);
+      break;
+    case 1:
+      out_595_shift3(Array[1]);
+      break;
+    case 2:
+      out_595_shift3(Array[2]);
+      break;
+    case 3:
+      out_595_shift3(Array[3]);
+      break;
+    case 4:
+      out_595_shift3(Array[4]);
+      break;
+    case 5:
+      out_595_shift3(Array[5]);
+      break;
+    case 6:
+      out_595_shift3(Array[6]);
+      break;
+    case 7:
+      out_595_shift3(Array[7]);
+      break;
+    case 8:
+      out_595_shift3(Array[8]);
+      break;
+    case 9:
+      out_595_shift3(Array[9]);
+      break;
+  }
+}
+void vivod_year_n1() {
+  switch (time_n_year1) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+}
+void vivod_year_n0() {
+  switch (time_n_year0) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_press_n3() {
+  switch (n_press3) {
+    case 0:
+      out_595_shift4(Array[0]);
+      break;
+    case 1:
+      out_595_shift4(Array[1]);
+      break;
+    case 2:
+      out_595_shift4(Array[2]);
+      break;
+    case 3:
+      out_595_shift4(Array[3]);
+      break;
+    case 4:
+      out_595_shift4(Array[4]);
+      break;
+    case 5:
+      out_595_shift4(Array[5]);
+      break;
+    case 6:
+      out_595_shift4(Array[6]);
+      break;
+    case 7:
+      out_595_shift4(Array[7]);
+      break;
+    case 8:
+      out_595_shift4(Array[8]);
+      break;
+    case 9:
+      out_595_shift4(Array[9]);
+      break;
+  }
+}
+void vivod_press_n2() {
+  switch (n_press2) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+
+
+void vivod_otobr1() {
+  switch (otobr1) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_otobr2() {
+  switch (otobr2) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_otobr3() {
+  switch (otobr3) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_otobr4() {
+  switch (otobr4) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
+void vivod_otobr5() {
+  switch (otobr5) {
+    case 0:
+      out_595_shift5(Array[0]);
+      break;
+    case 1:
+      out_595_shift5(Array[1]);
+      break;
+    case 2:
+      out_595_shift5(Array[2]);
+      break;
+    case 3:
+      out_595_shift5(Array[3]);
+      break;
+    case 4:
+      out_595_shift5(Array[4]);
+      break;
+    case 5:
+      out_595_shift5(Array[5]);
+      break;
+    case 6:
+      out_595_shift5(Array[6]);
+      break;
+    case 7:
+      out_595_shift5(Array[7]);
+      break;
+    case 8:
+      out_595_shift5(Array[8]);
+      break;
+    case 9:
+      out_595_shift5(Array[9]);
+      break;
+  }
+}
